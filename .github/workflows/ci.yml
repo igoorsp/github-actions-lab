@@ -92,7 +92,7 @@ jobs:
       # Necessário porque  trata tudo como string, mas o reusable
       # declara run-lint como type: boolean. Sem fromJSON, a comparação
       # poderia falhar pois inputs.skip_tests chega como string 'false'.
-      run-lint: ${{ fromJSON(inputs.skip_tests) != true }}
+      run-lint: ${{ fromJSON(inputs.skip_tests || 'false') != true }}
 
     # `secrets: inherit` → repassa todos os secrets do repo.
     # Alternativa explícita:
