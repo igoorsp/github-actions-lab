@@ -94,6 +94,7 @@ jobs:
         run: echo '${{ toJSON(runner) }}'
 
       - name: "inputs context (workflow_dispatch)"
+        if: github.event_name == 'workflow_dispatch'
         run: echo '${{ toJSON(inputs) }}'
 
       - name: "vars context (repository/org variables)"
