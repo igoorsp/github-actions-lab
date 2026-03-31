@@ -135,7 +135,7 @@ jobs:
         id: meu-step
         run: |
           # GITHUB_OUTPUT: expõe valores para outros steps
-          # via ${{ steps.<id>.outputs.<nome> }}
+          # via ${{ '{{' }} steps.<id>.outputs.<nome> ${{ '}}' }}
           echo "resultado=sucesso"           >> $GITHUB_OUTPUT
           echo "numero=42"                   >> $GITHUB_OUTPUT
 
