@@ -58,6 +58,8 @@ on:
 env:
   NODE_VERSION: "20"
   APP_NAME: "minha-app"
+  # Opt-in para Node.js 24 nas actions (evita warnings de deprecação)
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # ─────────────────────────────────────────────────────────────
 # concurrency: — EVITA RUNS PARALELOS NO MESMO CONTEXTO
@@ -92,6 +94,9 @@ jobs:
       # Necessário porque  trata tudo como string, mas o reusable
       # declara run-lint como type: boolean. Sem fromJSON, a comparação
       # poderia falhar pois inputs.skip_tests chega como string 'false'.
+      # ✅ `|| 'false'` garante fallback quando o input está vazio
+      # (push e pull_request não passam workflow_dispatch inputs,
+      # então inputs.skip_tests seria '' e fromJSON('') explode).
       run-lint: ${{ fromJSON(inputs.skip_tests || 'false') != true }}
 
     # `secrets: inherit` → repassa todos os secrets do repo.
