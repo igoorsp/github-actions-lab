@@ -8,6 +8,12 @@
 
 name: 🔍 Dump — Todos os Contexts & Vars
 
+# Variáveis declaradas no nível WORKFLOW — aparecem em todos os jobs/steps
+env:
+  APP_NAME: "github-actions-lab"
+  NODE_ENV: "production"
+  NIVEL: "workflow"
+
 on:
   workflow_dispatch:
     inputs:
@@ -36,6 +42,37 @@ on:
   pull_request:
 
 jobs:
+
+  # ─────────────────────────────────────────────────────────────
+  # 0. ENV CONTEXT — só reflete variáveis declaradas via `env:`
+  #    Variáveis de workflow + job + step se acumulam em cascata.
+  # ─────────────────────────────────────────────────────────────
+  dump-env-context:
+    name: "🌐 env context (workflow + job + step)"
+    runs-on: ubuntu-latest
+    # Nível JOB: soma às do workflow; NIVEL sobrescreve
+    env:
+      NIVEL: "job"
+      DB_HOST: "localhost"
+      DB_PORT: "5432"
+    steps:
+      - name: "env herdado do workflow + job"
+        run: echo '${{ toJSON(env) }}'
+        # APP_NAME, NODE_ENV, NIVEL=job, DB_HOST, DB_PORT
+
+      - name: "env com adição do step (NIVEL sobrescrito novamente)"
+        env:
+          NIVEL: "step"
+          STEP_ONLY: "só existe neste step"
+        run: echo '${{ toJSON(env) }}'
+        # APP_NAME, NODE_ENV, DB_HOST, DB_PORT, NIVEL=step, STEP_ONLY
+
+      - name: "lendo campos individuais via ${{ env.* }}"
+        run: |
+          echo "APP_NAME = ${{ env.APP_NAME }}"
+          echo "DB_HOST  = ${{ env.DB_HOST }}"
+          echo "NIVEL    = ${{ env.NIVEL }}"
+          # NIVEL volta a ser 'job' — escopo do step anterior já encerrou
 
   # ─────────────────────────────────────────────────────────────
   # 1. CONTEXT COMPLETO via toJSON — objeto inteiro de uma vez
