@@ -37,6 +37,10 @@ on:
       meu-ambiente:
         description: "Environment target"
         type: environment
+      meu-teste:
+        description: "Campo livre para testar qualquer valor"
+        type: string
+        default: "escreva qualquer coisa aqui"
 
   push:
   pull_request:
@@ -260,6 +264,7 @@ jobs:
           echo "inputs.meu-bool     = ${{ inputs.meu-bool }}"
           echo "inputs.meu-choice   = ${{ inputs.meu-choice }}"
           echo "inputs.meu-ambiente = ${{ inputs.meu-ambiente }}"
+          echo "inputs.meu-teste    = ${{ inputs.meu-teste }}"
 
       - name: "toJSON dos inputs"
         run: echo '${{ toJSON(inputs) }}'
