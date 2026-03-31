@@ -1,0 +1,240 @@
+# =============================================================
+# .github/workflows/reusable-build-test.yml
+# =============================================================
+#
+# CONCEITO: Reusable Workflow
+#
+# Um workflow normal, mas com `on: workflow_call`.
+# Só pode ser chamado por outros workflows — nunca dispara
+# sozinho por push/PR.
+#
+# ┌─────────────────────────────────────────────────────┐
+# │  Reusable Workflow  vs  Composite Action             │
+# │                                                      │
+# │  Reusable  → encapsula JOBS inteiros                 │
+# │              pode ter múltiplos jobs                 │
+# │              cada job roda em runner separado        │
+# │                                                      │
+# │  Composite → encapsula STEPS dentro de um job       │
+# │              roda no mesmo runner do caller          │
+# │              útil para setup repetitivo              │
+# └─────────────────────────────────────────────────────┘
+# =============================================================
+
+name: ♻️ Reusable — Build & Test
+
+on:
+  workflow_call:    # ← isso transforma o arquivo em "reusable"
+
+    # ─────────────────────────────────────────────────────────
+    # inputs: — PARÂMETROS DE ENTRADA
+    # O caller passa via `with:`.
+    # Tipos disponíveis: string | boolean | number
+    # ─────────────────────────────────────────────────────────
+    inputs:
+      node-version:
+        description: "Versão do Node.js a usar"
+        required: false
+        default: "20"
+        type: string
+
+      run-lint:
+        description: "Executar o linter antes do build?"
+        required: false
+        default: true
+        type: boolean
+
+      working-directory:
+        description: "Diretório raiz do projeto"
+        required: false
+        default: "."
+        type: string
+
+    # ─────────────────────────────────────────────────────────
+    # secrets: — SEGREDOS QUE O CALLER PODE REPASSAR
+    # Mesmo usando `secrets: inherit`, é boa prática declarar.
+    # ─────────────────────────────────────────────────────────
+    secrets:
+      NPM_TOKEN:
+        required: false    # false = opcional
+
+    # ─────────────────────────────────────────────────────────
+    # outputs: — VALORES QUE ESTE WORKFLOW EXPÕE PARA O CALLER
+    #
+    # Fluxo:
+    #   step  → seta via $GITHUB_OUTPUT
+    #   job   → declara em `outputs:` referenciando o step
+    #   workflow → declara em `outputs:` referenciando o job
+    #   caller → acessa via needs.<job-id>.outputs.<nome>
+    # ─────────────────────────────────────────────────────────
+    outputs:
+      artifact-name:
+        description: "Nome do artefato gerado"
+        value: ${{ jobs.build.outputs.artifact-name }}
+      build-version:
+        description: "Versão do build (ex: 1.0.0-abc1234)"
+        value: ${{ jobs.build.outputs.build-version }}
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────
+  # JOB A: Lint  (condicional via input booleano)
+  # ─────────────────────────────────────────────────────────
+  lint:
+    name: "🔍 Lint"
+    runs-on: ubuntu-latest
+    # ✅ Dentro de `if:`, NÃO use ${{ }}. O GitHub já avalia
+    # como expressão. Usar ${{ }} aqui funciona mas é redundante
+    # e pode causar confusão com tipos (string "true" vs bool true).
+    if: inputs.run-lint == true
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      # ─────────────────────────────────────────────────────
+      # actions/checkout — SEMPRE o primeiro step.
+      # Sem ele, o runner não tem o código do repositório.
+      # ─────────────────────────────────────────────────────
+      - name: "📥 Checkout do código"
+        uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────────────
+      # Composite action local.
+      # Definida em .github/actions/setup-node/action.yml
+      # Encapsula: instalar Node + gerenciar cache de deps.
+      # ─────────────────────────────────────────────────────
+      - name: "⚙️ Setup Node.js + cache"
+        uses: ./.github/actions/setup-node
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: "🔎 Rodar lint"
+        run: npm run lint
+
+  # ─────────────────────────────────────────────────────────
+  # JOB B: Testes com Matrix Strategy
+  # ─────────────────────────────────────────────────────────
+  test:
+    name: "🧪 Test (Node ${{ matrix.node }})"
+    runs-on: ubuntu-latest
+
+    # strategy.matrix — roda o job N vezes (uma por combinação).
+    # Aqui: job vai rodar 2x, com node 18 e node 20.
+    strategy:
+      matrix:
+        node: ["18", "20"]
+      fail-fast: false    # não cancela as outras matrizes se uma falhar
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: "📥 Checkout"
+        uses: actions/checkout@v4
+
+      - name: "⚙️ Setup Node.js ${{ matrix.node }}"
+        uses: ./.github/actions/setup-node
+        with:
+          node-version: ${{ matrix.node }}    # usa o valor da matrix
+
+      - name: "🧪 Rodar testes"
+        run: npm test -- --coverage
+
+      # ─────────────────────────────────────────────────────
+      # actions/upload-artifact — salva arquivos para:
+      # 1. Baixar na aba "Artifacts" do run
+      # 2. Usar em outro job via download-artifact
+      # ─────────────────────────────────────────────────────
+      - name: "📊 Upload do relatório de cobertura"
+        uses: actions/upload-artifact@v4
+        if: always()    # envia mesmo se os testes falharam
+        with:
+          name: coverage-node-${{ matrix.node }}
+          path: coverage/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────
+  # JOB C: Build
+  # ─────────────────────────────────────────────────────────
+  build:
+    name: "🔨 Build"
+    runs-on: ubuntu-latest
+    # needs com múltiplos jobs → aguarda AMBOS terminarem
+    needs: [lint, test]
+    # CORREÇÃO IMPORTANTE:
+    # `always() && !failure() && !cancelled()` era redundante e confuso.
+    # `always()` já força a execução, então a lógica com && não funcionava
+    # como esperado.
+    #
+    # O correto é: sem `always()`, o job roda se os needs passaram OU
+    # foram skipped (o que acontece quando run-lint=false).
+    # `!failure() && !cancelled()` cobre exatamente isso:
+    #   - needs com 'success'  → roda ✅
+    #   - needs com 'skipped'  → roda ✅ (lint skippado é ok)
+    #   - needs com 'failure'  → NÃO roda ❌
+    #   - needs com 'cancelled'→ NÃO roda ❌
+    if: ${{ !failure() && !cancelled() }}
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    # ─────────────────────────────────────────────────────────
+    # outputs: — expõe valores deste job para o workflow.
+    # Cada output referencia um step pelo `id:`.
+    # ─────────────────────────────────────────────────────────
+    outputs:
+      artifact-name: ${{ steps.set-outputs.outputs.artifact-name }}
+      build-version: ${{ steps.set-outputs.outputs.build-version }}
+
+    steps:
+      - name: "📥 Checkout"
+        uses: actions/checkout@v4
+
+      - name: "⚙️ Setup Node.js + cache"
+        uses: ./.github/actions/setup-node
+        with:
+          node-version: ${{ inputs.node-version }}
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: "🔨 Build da aplicação"
+        run: npm run build
+
+      # ─────────────────────────────────────────────────────
+      # $GITHUB_OUTPUT — forma moderna de definir outputs.
+      #
+      # Sintaxe: echo "nome=valor" >> $GITHUB_OUTPUT
+      #
+      # Contexts úteis do GitHub disponíveis aqui:
+      #   ${{ github.sha }}         hash completo do commit
+      #   ${{ github.run_number }}  número sequencial do run
+      #   ${{ github.run_id }}      ID único do run
+      #   ${{ github.actor }}       quem disparou o workflow
+      #   ${{ github.ref_name }}    nome da branch ou tag
+      #   ${{ github.event_name }}  nome do evento (push, PR…)
+      #   ${{ runner.os }}          Linux | Windows | macOS
+      # ─────────────────────────────────────────────────────
+      - name: "📌 Definir outputs do job"
+        id: set-outputs    # id necessário para referenciar no `outputs:`
+        run: |
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"           # primeiros 7 chars
+          VERSION="1.0.0-${SHORT_SHA}"
+          ARTIFACT_NAME="build-${VERSION}-run${{ github.run_number }}"
+
+          echo "artifact-name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
+          echo "build-version=${VERSION}"       >> $GITHUB_OUTPUT
+
+          echo "✅ artifact-name: ${ARTIFACT_NAME}"
+          echo "✅ build-version: ${VERSION}"
+
+      - name: "📦 Upload do artefato de build"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.set-outputs.outputs.artifact-name }}
+          path: dist/
+          retention-days: 1
+          if-no-files-found: warn

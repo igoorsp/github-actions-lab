@@ -1,0 +1,168 @@
+# =============================================================
+# .github/actions/deploy/action.yml
+# =============================================================
+#
+# Composite action de deploy.
+# Demonstra: outputs encadeados entre steps, uso correto de
+# secrets como env vars, e steps condicionais por input.
+# =============================================================
+
+name: "🚀 Deploy da Aplicação"
+description: "Valida artefatos, executa deploy e faz health check"
+
+inputs:
+  environment:
+    description: "staging | production"
+    required: true
+
+  app-name:
+    description: "Nome da aplicação"
+    required: true
+
+  build-version:
+    description: "Versão do build"
+    required: false
+    default: "unknown"
+
+  deploy-token:
+    description: "Token de autenticação para o serviço de deploy"
+    required: true
+
+  deploy-host:
+    description: "Host do servidor de deploy"
+    required: true
+
+  dist-path:
+    description: "Caminho dos arquivos buildados"
+    required: false
+    default: "dist/"
+
+outputs:
+  deploy-url:
+    description: "URL final da aplicação"
+    value: ${{ steps.generate-url.outputs.url }}
+
+  deploy-id:
+    description: "ID único deste deploy"
+    value: ${{ steps.do-deploy.outputs.deploy-id }}
+
+runs:
+  using: "composite"
+  steps:
+
+    # ─────────────────────────────────────────────────────────
+    # 1. Validar artefatos
+    # ─────────────────────────────────────────────────────────
+    - name: "🔍 Validar artefatos de build"
+      shell: bash
+      run: |
+        if [ ! -d "${{ inputs.dist-path }}" ]; then
+          echo "❌ Diretório '${{ inputs.dist-path }}' não encontrado!"
+          exit 1
+        fi
+        COUNT=$(find "${{ inputs.dist-path }}" -type f | wc -l)
+        echo "✅ ${COUNT} arquivo(s) prontos para deploy"
+
+    # ─────────────────────────────────────────────────────────
+    # 2. Configurar parâmetros por ambiente
+    #    (outputs de um step usados em steps posteriores)
+    # ─────────────────────────────────────────────────────────
+    - name: "⚙️ Configurar parâmetros do ambiente"
+      id: env-config
+      shell: bash
+      run: |
+        if [ "${{ inputs.environment }}" = "production" ]; then
+          echo "replicas=3"           >> $GITHUB_OUTPUT
+          echo "health-check=true"   >> $GITHUB_OUTPUT
+          echo "timeout=300"         >> $GITHUB_OUTPUT
+        else
+          echo "replicas=1"          >> $GITHUB_OUTPUT
+          echo "health-check=false"  >> $GITHUB_OUTPUT
+          echo "timeout=60"          >> $GITHUB_OUTPUT
+        fi
+
+    # ─────────────────────────────────────────────────────────
+    # 3. Executar deploy
+    #
+    # BOAS PRÁTICAS com secrets:
+    #   ✅ Passe secrets como variáveis de ambiente (env:)
+    #   ❌ NUNCA coloque secrets direto no `run:` inline
+    #      (ficam visíveis nos logs mesmo com mascaramento)
+    # ─────────────────────────────────────────────────────────
+    - name: "🚀 Executar deploy"
+      id: do-deploy
+      shell: bash
+      env:
+        DEPLOY_TOKEN: ${{ inputs.deploy-token }}    # ✅ via env
+        DEPLOY_HOST: ${{ inputs.deploy-host }}      # ✅ via env
+      run: |
+        # Aviso se rodando sem credenciais reais (ambiente de estudo)
+        if [ -z "$DEPLOY_TOKEN" ]; then
+          echo "⚠️  DEPLOY_TOKEN não configurado — rodando em modo simulação"
+        fi
+        echo "🚀 Iniciando deploy..."
+        echo "   App:       ${{ inputs.app-name }}"
+        echo "   Versão:    ${{ inputs.build-version }}"
+        echo "   Ambiente:  ${{ inputs.environment }}"
+        echo "   Réplicas:  ${{ steps.env-config.outputs.replicas }}"
+        echo "   Timeout:   ${{ steps.env-config.outputs.timeout }}s"
+        echo ""
+        echo "   Host: $DEPLOY_HOST"
+        echo "   (token mascarado automaticamente pelo GitHub)"
+
+        # ─── Substitua pelo seu comando real de deploy ───────
+        # Exemplos:
+        #   flyctl deploy --remote-only
+        #   vercel deploy --prod --token=$DEPLOY_TOKEN
+        #   aws s3 sync dist/ s3://bucket --delete
+        #   kubectl apply -f k8s/
+        #   rsync -avz dist/ user@$DEPLOY_HOST:/var/www/app
+        # ─────────────────────────────────────────────────────
+
+        # Simulação:
+        sleep 2
+        # ✅ Dentro de composite actions, prefira variáveis de ambiente
+        # do runner ($GITHUB_RUN_NUMBER) a expressões de contexto
+        # (${{ github.run_number }}). Ambas funcionam, mas as env vars
+        # são mais seguras contra injeção de código via inputs.
+        DEPLOY_ID="deploy-${GITHUB_RUN_NUMBER}-$(date +%s)"
+        echo "deploy-id=${DEPLOY_ID}" >> $GITHUB_OUTPUT
+        echo "✅ Deploy concluído! ID: ${DEPLOY_ID}"
+
+    # ─────────────────────────────────────────────────────────
+    # 4. Gerar URL — output encadeado (usa output do step acima)
+    # ─────────────────────────────────────────────────────────
+    - name: "🌐 Gerar URL do deploy"
+      id: generate-url
+      shell: bash
+      run: |
+        APP="${{ inputs.app-name }}"
+        ENV="${{ inputs.environment }}"
+
+        if [ "${ENV}" = "production" ]; then
+          URL="https://${APP}.exemplo.com"
+        else
+          URL="https://${APP}-${ENV}.exemplo.com"
+        fi
+
+        echo "url=${URL}" >> $GITHUB_OUTPUT
+        echo "🌐 Disponível em: ${URL}"
+
+    # ─────────────────────────────────────────────────────────
+    # 5. Health check (só em production, controlado por output)
+    # ─────────────────────────────────────────────────────────
+    - name: "❤️ Health check"
+      if: steps.env-config.outputs.health-check == 'true'
+      shell: bash
+      run: |
+        URL="${{ steps.generate-url.outputs.url }}"
+        echo "🏥 Verificando saúde em: ${URL}/health"
+
+        # Exemplo real com retry:
+        # for i in $(seq 1 5); do
+        #   curl --fail --silent "${URL}/health" && break
+        #   echo "Tentativa ${i} falhou, aguardando..."
+        #   sleep 10
+        # done
+
+        echo "✅ Aplicação saudável!"

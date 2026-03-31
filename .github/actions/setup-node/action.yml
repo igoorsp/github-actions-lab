@@ -1,0 +1,142 @@
+# =============================================================
+# .github/actions/setup-node/action.yml
+# =============================================================
+#
+# CONCEITO: Composite Action
+#
+# Encapsula uma sequência de steps reutilizáveis.
+# Roda no MESMO runner do job que a chama (não cria nova VM).
+#
+# ┌──────────────────────────────────────────────────────┐
+# │  LOCALIZAÇÃO OBRIGATÓRIA                              │
+# │  .github/actions/<nome>/action.yml                   │
+# │                                                      │
+# │  USO no workflow:                                    │
+# │  uses: ./.github/actions/setup-node                  │
+# └──────────────────────────────────────────────────────┘
+#
+# Quando usar Composite em vez de Reusable Workflow?
+#   ✅ Setup repetitivo (Node, Python, cache, auth…)
+#   ✅ Sequência de steps que aparece em vários jobs
+#   ✅ Quando precisa do mesmo runner/contexto do job pai
+#   ❌ Quando precisa de múltiplos jobs
+#   ❌ Quando precisa de runners diferentes
+# =============================================================
+
+name: "⚙️ Setup Node.js com Cache"
+description: >
+  Instala a versão correta do Node.js, configura autenticação
+  npm (opcional) e restaura cache de node_modules para
+  acelerar instalações subsequentes.
+
+# ─────────────────────────────────────────────────────────────
+# inputs: — parâmetros que o caller passa via `with:`
+# ─────────────────────────────────────────────────────────────
+inputs:
+  node-version:
+    description: "Versão do Node.js"
+    required: false
+    default: "20"
+
+  npm-token:
+    description: "Token para registros npm privados"
+    required: false
+    default: ""    # string vazia = não configurar auth
+
+  cache-key-prefix:
+    description: "Prefixo customizável para a chave de cache"
+    required: false
+    default: "npm-deps"
+
+# ─────────────────────────────────────────────────────────────
+# outputs: — valores que esta action expõe para o job caller
+# Referencia steps internos pelo `id:`.
+# ─────────────────────────────────────────────────────────────
+outputs:
+  cache-hit:
+    description: "true se o cache foi restaurado, false se não"
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+  node-version-used:
+    description: "Versão exata do Node instalada"
+    value: ${{ steps.setup-node.outputs.node-version }}
+
+# ─────────────────────────────────────────────────────────────
+# runs: — define o tipo desta action
+#   "composite" → sequência de steps (este caso)
+#   "node20"    → script JavaScript/TypeScript
+#   "docker"    → container Docker
+# ─────────────────────────────────────────────────────────────
+runs:
+  using: "composite"    # ← o que a torna uma composite action
+
+  steps:
+    # ─────────────────────────────────────────────────────────
+    # 1. Instalar Node.js
+    # actions/setup-node é uma action oficial do GitHub.
+    # ─────────────────────────────────────────────────────────
+    - name: "📦 Instalar Node.js ${{ inputs.node-version }}"
+      id: setup-node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        # Não usamos o cache embutido aqui para demonstrar
+        # como fazer cache manualmente com actions/cache.
+
+    # ─────────────────────────────────────────────────────────
+    # 2. Cache de node_modules
+    #
+    # Como funciona:
+    #   - A `key` é calculada a partir do hash do package-lock.json
+    #   - Se a key bater (cache hit) → node_modules é restaurado
+    #   - Se não bater (cache miss) → npm ci roda normalmente
+    #   - Após o job, o cache é salvo automaticamente
+    #
+    # hashFiles('**/package-lock.json'):
+    #   Gera um hash do arquivo. Se package-lock mudar,
+    #   a key muda, o cache invalida → npm ci roda de novo.
+    #
+    # restore-keys: fallback progressivo de keys.
+    #   Se a key exata não bater, tenta as restore-keys
+    #   (restaura cache parcial — melhor que nada).
+    # ─────────────────────────────────────────────────────────
+    - name: "💾 Restaurar cache de node_modules"
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: node_modules
+        key: ${{ inputs.cache-key-prefix }}-${{ inputs.node-version }}-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ inputs.cache-key-prefix }}-${{ inputs.node-version }}-
+          ${{ inputs.cache-key-prefix }}-
+
+    # ─────────────────────────────────────────────────────────
+    # 3. Configurar auth para npm privado (se token fornecido)
+    #
+    # ATENÇÃO: em composite actions, `run:` SEMPRE precisa
+    # declarar `shell:`. Sem isso dá erro!
+    # ─────────────────────────────────────────────────────────
+    - name: "🔑 Configurar autenticação npm"
+      if: ${{ inputs.npm-token != '' }}
+      shell: bash    # OBRIGATÓRIO em composite actions
+      run: |
+        echo "//registry.npmjs.org/:_authToken=${{ inputs.npm-token }}" > ~/.npmrc
+        echo "✅ npm auth configurado"
+
+    # ─────────────────────────────────────────────────────────
+    # 4. Instalar dependências (só se não teve cache hit)
+    # ─────────────────────────────────────────────────────────
+    - name: "📥 Instalar dependências (npm ci)"
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        echo "🔄 Cache miss — rodando npm ci..."
+        npm ci
+        echo "✅ Dependências instaladas"
+
+    - name: "⚡ Cache hit — pulando npm ci"
+      if: steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        echo "✅ Cache hit! node_modules restaurado."
+        echo "   Chave: ${{ inputs.cache-key-prefix }}-${{ inputs.node-version }}"

@@ -1,0 +1,277 @@
+# =============================================================
+# .github/workflows/extras-conceitos.yml
+# =============================================================
+#
+# Playground de conceitos avançados em um único arquivo.
+# NÃO é chamado pelo ci.yml — rode manualmente para explorar.
+# =============================================================
+
+name: 📚 Extras — Conceitos Avançados
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug-mode:
+        description: "Ativar modo debug verbose?"
+        type: boolean
+        default: false
+
+  schedule:
+    - cron: "0 6 * * 1-5"    # 06:00 UTC, segunda a sexta
+
+# Permissões mínimas (princípio do menor privilégio)
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+
+  # ───────────────────────────────────────────────────────────
+  # TODOS OS CONTEXTS DO GITHUB
+  # ───────────────────────────────────────────────────────────
+  contexts:
+    name: "📋 GitHub Contexts"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "🔎 Context: github.*"
+        run: |
+          echo "─── Repositório ────────────────────────────"
+          echo "github.repository      = ${{ github.repository }}"
+          echo "github.repository_owner= ${{ github.repository_owner }}"
+
+          echo "─── Commit/Branch ──────────────────────────"
+          echo "github.sha             = ${{ github.sha }}"
+          echo "github.ref             = ${{ github.ref }}"
+          echo "github.ref_name        = ${{ github.ref_name }}"
+          echo "github.ref_type        = ${{ github.ref_type }}"
+          echo "github.head_ref        = ${{ github.head_ref }}"
+          echo "github.base_ref        = ${{ github.base_ref }}"
+
+          echo "─── Run ────────────────────────────────────"
+          echo "github.run_id          = ${{ github.run_id }}"
+          echo "github.run_number      = ${{ github.run_number }}"
+          echo "github.run_attempt     = ${{ github.run_attempt }}"
+
+          echo "─── Evento ─────────────────────────────────"
+          echo "github.event_name      = ${{ github.event_name }}"
+          echo "github.actor           = ${{ github.actor }}"
+          echo "github.triggering_actor= ${{ github.triggering_actor }}"
+
+          echo "─── Runner ─────────────────────────────────"
+          echo "runner.os              = ${{ runner.os }}"
+          echo "runner.arch            = ${{ runner.arch }}"
+          echo "runner.name            = ${{ runner.name }}"
+          echo "runner.temp            = ${{ runner.temp }}"
+
+          echo "─── Job ────────────────────────────────────"
+          echo "job.status             = ${{ job.status }}"
+
+  # ───────────────────────────────────────────────────────────
+  # EXPRESSÕES, FUNÇÕES E OPERADORES
+  # ───────────────────────────────────────────────────────────
+  expressoes:
+    name: "🧮 Expressões & Funções"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Funções de string"
+        run: |
+          # contains(string, substring)
+          echo "É main? ${{ github.ref == 'refs/heads/main' }}"
+
+          # startsWith / endsWith
+          echo "É feature? ${{ startsWith(github.ref, 'refs/heads/feature/') }}"
+
+          # format(string, ...args)
+          echo "${{ format('Olá {0}! Branch: {1}', github.actor, github.ref_name) }}"
+
+          # toJSON — útil para debug de objetos
+          echo "Evento: ${{ toJSON(github.event_name) }}"
+
+          # fromJSON — parseia JSON string
+          # Útil para passar arrays entre steps
+
+      # ──────────────────────────────────────────────────────
+      # NOTA sobre `if:` com e sem ${{ }}:
+      #
+      #  if: github.ref == 'refs/heads/main'         ← válido
+      #  if: ${{ github.ref == 'refs/heads/main' }}  ← válido
+      #
+      # Dentro de `if:`, o GitHub avalia automaticamente como
+      # expressão. O ${{ }} é opcional em linha única.
+      # Para expressões LONGAS ou com || e &&, prefira ${{ }}
+      # para evitar erros de parse do YAML.
+      # ──────────────────────────────────────────────────────
+
+      - name: "Operadores lógicos em `if:`"
+        # ✅ Expressões multi-linha em `if:` devem ser envoltas em ${{ }}
+        # para garantir que o parser YAML não interprete o conteúdo
+        # como string literal antes do GitHub avaliar a expressão.
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
+        run: echo "Rodou por dispatch ou schedule!"
+
+  # ───────────────────────────────────────────────────────────
+  # GITHUB_ENV e GITHUB_OUTPUT — variáveis entre steps
+  # ───────────────────────────────────────────────────────────
+  variaveis-entre-steps:
+    name: "🌍 Vars Entre Steps"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "📝 Setar via GITHUB_ENV"
+        run: |
+          # GITHUB_ENV: disponível em TODOS os steps posteriores
+          # como variável de ambiente normal ($VAR_NAME)
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          BUILD_ID="build-$(echo $RANDOM | md5sum | head -c 6)"
+
+          echo "MY_TIMESTAMP=${TIMESTAMP}" >> $GITHUB_ENV
+          echo "MY_BUILD_ID=${BUILD_ID}"   >> $GITHUB_ENV
+
+      - name: "✅ Usar GITHUB_ENV do step anterior"
+        run: |
+          echo "Timestamp: $MY_TIMESTAMP"    # variável de env normal
+          echo "Build ID:  $MY_BUILD_ID"
+
+      - name: "📌 Setar via GITHUB_OUTPUT"
+        id: meu-step
+        run: |
+          # GITHUB_OUTPUT: expõe valores para outros steps
+          # via ${{ steps.<id>.outputs.<nome> }}
+          echo "resultado=sucesso"           >> $GITHUB_OUTPUT
+          echo "numero=42"                   >> $GITHUB_OUTPUT
+
+      - name: "✅ Usar GITHUB_OUTPUT do step anterior"
+        run: |
+          echo "Resultado: ${{ steps.meu-step.outputs.resultado }}"
+          echo "Número:    ${{ steps.meu-step.outputs.numero }}"
+
+      - name: "📋 Adicionar ao PATH via GITHUB_PATH"
+        run: |
+          # GITHUB_PATH: adiciona diretório ao PATH para steps posteriores
+          mkdir -p /tmp/meus-binarios
+          echo "/tmp/meus-binarios" >> $GITHUB_PATH
+
+  # ───────────────────────────────────────────────────────────
+  # OUTPUTS ENTRE JOBS (sem reusable workflow)
+  # ───────────────────────────────────────────────────────────
+  job-producer:
+    name: "📤 Produz Outputs"
+    runs-on: ubuntu-latest
+    outputs:
+      # Declara aqui, referenciando um step pelo id
+      timestamp: ${{ steps.gera.outputs.timestamp }}
+      random-id: ${{ steps.gera.outputs.random-id }}
+      is-weekday: ${{ steps.gera.outputs.is-weekday }}
+
+    steps:
+      - name: "📌 Gerar valores"
+        id: gera
+        run: |
+          TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          # ✅ Usando $RANDOM + sha — portável em qualquer runner Linux/macOS.
+          # Evitar `cat /proc/sys/kernel/random/uuid` pois é Linux-only.
+          RID=$(echo "${RANDOM}${RANDOM}" | sha256sum | head -c 8)
+          DAY=$(date +%u)   # 1=seg … 7=dom
+          WEEKDAY=$([ "$DAY" -le 5 ] && echo "true" || echo "false")
+
+          echo "timestamp=${TS}"       >> $GITHUB_OUTPUT
+          echo "random-id=${RID}"      >> $GITHUB_OUTPUT
+          echo "is-weekday=${WEEKDAY}" >> $GITHUB_OUTPUT
+
+  job-consumer:
+    name: "📥 Consome Outputs"
+    runs-on: ubuntu-latest
+    needs: job-producer    # aguarda job-producer
+    steps:
+      - name: "🖨️ Usar outputs do job anterior"
+        run: |
+          echo "Timestamp:  ${{ needs.job-producer.outputs.timestamp }}"
+          echo "Random ID:  ${{ needs.job-producer.outputs.random-id }}"
+          echo "É dia útil? ${{ needs.job-producer.outputs.is-weekday }}"
+
+      - name: "📅 Step condicional baseado em output"
+        if: needs.job-producer.outputs.is-weekday == 'true'
+        run: echo "É dia útil — pipeline completo!"
+
+      - name: "🌙 Step só nos fins de semana"
+        if: needs.job-producer.outputs.is-weekday == 'false'
+        run: echo "É fim de semana — pipeline resumido."
+
+  # ───────────────────────────────────────────────────────────
+  # RESILIÊNCIA: continue-on-error, timeout, retry
+  # ───────────────────────────────────────────────────────────
+  resiliencia:
+    name: "🛡️ Resiliência"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10    # timeout do JOB inteiro
+
+    steps:
+      - name: "⚠️ Falha que não bloqueia o job"
+        continue-on-error: true    # job continua mesmo com falha aqui
+        run: |
+          echo "Tentando algo arriscado..."
+          exit 1
+
+      - name: "✅ Continua após falha acima"
+        run: echo "Job prosseguiu normalmente!"
+
+      - name: "⏱️ Step com timeout próprio"
+        timeout-minutes: 1
+        run: |
+          echo "Máximo 1 minuto para este step"
+          sleep 5
+          echo "Concluído no prazo!"
+
+      - name: "🐛 Debug verbose (só se input ativado)"
+        # ✅ Padronizando: sempre use ${{ }} em `if:` quando comparar
+        # inputs booleanos — evita ambiguidade com a string "true".
+        if: ${{ inputs.debug-mode == true }}
+        run: |
+          echo "=== ENV VARS ==="
+          env | sort
+          echo "=== DISK ==="
+          df -h
+          echo "=== MEMORY ==="
+          free -h
+          echo "=== PROCESSOS ==="
+          ps aux | head -20
+
+  # ───────────────────────────────────────────────────────────
+  # MATRIX AVANÇADA
+  # ───────────────────────────────────────────────────────────
+  matrix-avancada:
+    name: "🔢 Matrix (${{ matrix.os }}, Node ${{ matrix.node }})"
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ["18", "20"]
+        # include: adiciona combinações extras com propriedades extra
+        include:
+          - os: ubuntu-latest
+            node: "20"
+            is-main-combo: true
+        # exclude: remove combinações específicas
+        exclude:
+          - os: windows-latest
+            node: "18"
+      fail-fast: false    # não cancela outros se um falhar
+
+    steps:
+      - name: "ℹ️ Info da combinação"
+        run: |
+          echo "OS:       ${{ matrix.os }}"
+          echo "Node:     ${{ matrix.node }}"
+          echo "Main?     ${{ matrix.is-main-combo || 'false' }}"
+          echo "Runner:   ${{ runner.os }} / ${{ runner.arch }}"
+
+      - name: "🪟 Step só no Windows"
+        if: runner.os == 'Windows'
+        # ✅ `shell:` deve ser declarado junto ao step (antes ou depois de `run:`
+        # não importa no YAML, mas por convenção vem antes).
+        shell: pwsh
+        run: Write-Host "Rodando no Windows com PowerShell!"
+
+      - name: "🐧 Step só no Linux"
+        if: runner.os == 'Linux'
+        run: echo "Rodando no Linux!"

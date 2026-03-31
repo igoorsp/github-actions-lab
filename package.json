@@ -1,0 +1,14 @@
+{
+  "name": "github-actions-lab",
+  "version": "1.0.0",
+  "description": "Estrutura completa e comentada para aprender **Reusable Workflows**, **Composite Actions**, inputs/outputs, contexts, secrets e muito mais.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo 'tests ok'",
+    "lint": "echo 'lint ok'",
+    "build": "mkdir -p dist && echo 'build ok' > dist/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

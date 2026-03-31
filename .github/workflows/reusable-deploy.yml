@@ -1,0 +1,130 @@
+# =============================================================
+# .github/workflows/reusable-deploy.yml
+# =============================================================
+#
+# Reusable workflow de deploy.
+# Demonstra: environments com protection rules, secrets por
+# ambiente, e GITHUB_STEP_SUMMARY.
+# =============================================================
+
+name: ♻️ Reusable — Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Ambiente alvo: staging | production"
+        required: true
+        type: string
+
+      app-name:
+        description: "Nome da aplicação"
+        required: true
+        type: string
+
+      artifact-name:
+        description: "Nome do artefato a ser deployado"
+        required: true
+        type: string
+
+      build-version:
+        description: "Versão do build"
+        required: false
+        default: "unknown"
+        type: string
+
+    secrets:
+      DEPLOY_TOKEN:
+        # required: false para não quebrar em repos de estudo sem o secret.
+        # Em produção real, mude para required: true.
+        required: false
+      DEPLOY_HOST:
+        required: false
+
+    outputs:
+      deploy-url:
+        description: "URL da aplicação após o deploy"
+        value: ${{ jobs.deploy.outputs.deploy-url }}
+
+jobs:
+  deploy:
+    name: "🚀 Deploy → ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+
+    # ─────────────────────────────────────────────────────────
+    # environment: — vincula o job a um ambiente do GitHub.
+    #
+    # Ambientes são configurados em:
+    #   Settings → Environments
+    #
+    # Cada ambiente pode ter:
+    #   - Seus próprios secrets (diferentes do repo)
+    #   - Required reviewers (aprovação manual antes de rodar)
+    #   - Wait timer (delay antes de executar)
+    #   - Deployment branches (só branches específicas)
+    #
+    # A `url:` aparece como link na página do deployment.
+    # ─────────────────────────────────────────────────────────
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.do-deploy.outputs.deploy-url }}
+
+    outputs:
+      deploy-url: ${{ steps.do-deploy.outputs.deploy-url }}
+
+    steps:
+      - name: "📥 Checkout"
+        uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────────────
+      # Download do artefato gerado pelo job de build.
+      # O nome vem do output do reusable anterior,
+      # passado pelo caller via `with:`.
+      # ─────────────────────────────────────────────────────
+      - name: "📦 Download do artefato de build"
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: dist/
+
+      - name: "🔍 Verificar arquivos baixados"
+        run: |
+          echo "Arquivos prontos para deploy:"
+          ls -la dist/
+
+      # ─────────────────────────────────────────────────────
+      # Composite action local de deploy
+      # ─────────────────────────────────────────────────────
+      - name: "🚀 Executar deploy"
+        id: do-deploy
+        uses: ./.github/actions/deploy
+        with:
+          environment: ${{ inputs.environment }}
+          app-name: ${{ inputs.app-name }}
+          build-version: ${{ inputs.build-version }}
+          deploy-token: ${{ secrets.DEPLOY_TOKEN }}
+          deploy-host: ${{ secrets.DEPLOY_HOST }}
+
+      # ─────────────────────────────────────────────────────
+      # $GITHUB_STEP_SUMMARY — escreve Markdown na aba
+      # "Summary" do workflow run no GitHub UI.
+      # Ótimo para dashboards de deploy.
+      # ─────────────────────────────────────────────────────
+      - name: "📝 Escrever resumo do deploy"
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          ICON="✅"
+          [ "$STATUS" != "success" ] && ICON="❌"
+
+          echo "## ${ICON} Deploy para \`${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Campo        | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **App**      | \`${{ inputs.app-name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Versão**   | \`${{ inputs.build-version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Ambiente** | \`${{ inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL**      | ${{ steps.do-deploy.outputs.deploy-url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status**   | $STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit**   | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Por**      | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
