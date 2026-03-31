@@ -1,0 +1,294 @@
+# =============================================================
+# .github/workflows/dump-contexts.yml
+# =============================================================
+#
+# Loga TUDO que o GitHub Actions disponibiliza como input/context.
+# Dispare manualmente via workflow_dispatch para ver os valores.
+# =============================================================
+
+name: 🔍 Dump — Todos os Contexts & Vars
+
+on:
+  workflow_dispatch:
+    inputs:
+      meu-texto:
+        description: "Input de texto livre"
+        type: string
+        default: "hello"
+      meu-numero:
+        description: "Input numérico"
+        type: number
+        default: 42
+      meu-bool:
+        description: "Input booleano"
+        type: boolean
+        default: false
+      meu-choice:
+        description: "Input de escolha"
+        type: choice
+        default: "staging"
+        options: [staging, production, dev]
+      meu-ambiente:
+        description: "Environment target"
+        type: environment
+
+  push:
+  pull_request:
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────────
+  # 1. CONTEXT COMPLETO via toJSON — objeto inteiro de uma vez
+  # ─────────────────────────────────────────────────────────────
+  dump-json-contexts:
+    name: "📦 toJSON dos Contexts"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "github context (objeto completo)"
+        run: echo '${{ toJSON(github) }}'
+
+      - name: "env context"
+        run: echo '${{ toJSON(env) }}'
+
+      - name: "job context"
+        run: echo '${{ toJSON(job) }}'
+
+      - name: "runner context"
+        run: echo '${{ toJSON(runner) }}'
+
+      - name: "inputs context (workflow_dispatch)"
+        run: echo '${{ toJSON(inputs) }}'
+
+      - name: "vars context (repository/org variables)"
+        run: echo '${{ toJSON(vars) }}'
+
+      # secrets NÃO aparecem nos logs (mascarados pelo GitHub)
+      # mas a lista de nomes pode ser inspecionada via API
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. GITHUB CONTEXT — campo a campo
+  # ─────────────────────────────────────────────────────────────
+  dump-github-context:
+    name: "🐙 github.* (campo a campo)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Repositório"
+        run: |
+          echo "github.repository            = ${{ github.repository }}"
+          echo "github.repository_id         = ${{ github.repository_id }}"
+          echo "github.repository_owner      = ${{ github.repository_owner }}"
+          echo "github.repository_owner_id   = ${{ github.repository_owner_id }}"
+          echo "github.repositoryUrl         = ${{ github.repositoryUrl }}"
+
+      - name: "Commit & Ref"
+        run: |
+          echo "github.sha                   = ${{ github.sha }}"
+          echo "github.ref                   = ${{ github.ref }}"
+          echo "github.ref_name              = ${{ github.ref_name }}"
+          echo "github.ref_type              = ${{ github.ref_type }}"
+          echo "github.ref_protected         = ${{ github.ref_protected }}"
+          echo "github.head_ref              = ${{ github.head_ref }}"
+          echo "github.base_ref              = ${{ github.base_ref }}"
+
+      - name: "Workflow & Run"
+        run: |
+          echo "github.workflow              = ${{ github.workflow }}"
+          echo "github.workflow_ref          = ${{ github.workflow_ref }}"
+          echo "github.workflow_sha          = ${{ github.workflow_sha }}"
+          echo "github.run_id                = ${{ github.run_id }}"
+          echo "github.run_number            = ${{ github.run_number }}"
+          echo "github.run_attempt           = ${{ github.run_attempt }}"
+          echo "github.retention_days        = ${{ github.retention_days }}"
+
+      - name: "Evento"
+        run: |
+          echo "github.event_name            = ${{ github.event_name }}"
+          echo "github.actor                 = ${{ github.actor }}"
+          echo "github.actor_id              = ${{ github.actor_id }}"
+          echo "github.triggering_actor      = ${{ github.triggering_actor }}"
+
+      - name: "Job & Action"
+        run: |
+          echo "github.job                   = ${{ github.job }}"
+          echo "github.action                = ${{ github.action }}"
+          echo "github.action_path           = ${{ github.action_path }}"
+          echo "github.action_ref            = ${{ github.action_ref }}"
+          echo "github.action_repository     = ${{ github.action_repository }}"
+          echo "github.action_status         = ${{ github.action_status }}"
+
+      - name: "Servidor & API"
+        run: |
+          echo "github.server_url            = ${{ github.server_url }}"
+          echo "github.api_url               = ${{ github.api_url }}"
+          echo "github.graphql_url           = ${{ github.graphql_url }}"
+          echo "github.workspace             = ${{ github.workspace }}"
+
+      - name: "Payload do evento (toJSON)"
+        run: echo '${{ toJSON(github.event) }}'
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. RUNNER CONTEXT — campo a campo
+  # ─────────────────────────────────────────────────────────────
+  dump-runner-context:
+    name: "🖥️ runner.* (campo a campo)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Runner info"
+        run: |
+          echo "runner.name                  = ${{ runner.name }}"
+          echo "runner.os                    = ${{ runner.os }}"
+          echo "runner.arch                  = ${{ runner.arch }}"
+          echo "runner.temp                  = ${{ runner.temp }}"
+          echo "runner.tool_cache            = ${{ runner.tool_cache }}"
+          echo "runner.debug                 = ${{ runner.debug }}"
+          echo "runner.environment           = ${{ runner.environment }}"
+
+  # ─────────────────────────────────────────────────────────────
+  # 4. VARIÁVEIS DE AMBIENTE DO RUNNER — tudo que o shell enxerga
+  # ─────────────────────────────────────────────────────────────
+  dump-env-vars:
+    name: "🌍 Variáveis de Ambiente do Runner"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Todas as env vars (ordenadas)"
+        run: env | sort
+
+      - name: "Variáveis GITHUB_* especiais"
+        run: |
+          echo "─── Arquivos especiais do runner ───────────────────"
+          echo "GITHUB_OUTPUT     = $GITHUB_OUTPUT"
+          echo "GITHUB_ENV        = $GITHUB_ENV"
+          echo "GITHUB_PATH       = $GITHUB_PATH"
+          echo "GITHUB_STEP_SUMMARY = $GITHUB_STEP_SUMMARY"
+          echo "GITHUB_STATE      = $GITHUB_STATE"
+          echo ""
+          echo "─── Identidade & repositório ───────────────────────"
+          echo "GITHUB_REPOSITORY       = $GITHUB_REPOSITORY"
+          echo "GITHUB_REPOSITORY_ID    = $GITHUB_REPOSITORY_ID"
+          echo "GITHUB_REPOSITORY_OWNER = $GITHUB_REPOSITORY_OWNER"
+          echo "GITHUB_ACTOR            = $GITHUB_ACTOR"
+          echo "GITHUB_ACTOR_ID         = $GITHUB_ACTOR_ID"
+          echo "GITHUB_TRIGGERING_ACTOR = $GITHUB_TRIGGERING_ACTOR"
+          echo ""
+          echo "─── Commit & ref ───────────────────────────────────"
+          echo "GITHUB_SHA        = $GITHUB_SHA"
+          echo "GITHUB_REF        = $GITHUB_REF"
+          echo "GITHUB_REF_NAME   = $GITHUB_REF_NAME"
+          echo "GITHUB_REF_TYPE   = $GITHUB_REF_TYPE"
+          echo "GITHUB_HEAD_REF   = $GITHUB_HEAD_REF"
+          echo "GITHUB_BASE_REF   = $GITHUB_BASE_REF"
+          echo ""
+          echo "─── Workflow & run ─────────────────────────────────"
+          echo "GITHUB_WORKFLOW         = $GITHUB_WORKFLOW"
+          echo "GITHUB_WORKFLOW_REF     = $GITHUB_WORKFLOW_REF"
+          echo "GITHUB_WORKFLOW_SHA     = $GITHUB_WORKFLOW_SHA"
+          echo "GITHUB_RUN_ID           = $GITHUB_RUN_ID"
+          echo "GITHUB_RUN_NUMBER       = $GITHUB_RUN_NUMBER"
+          echo "GITHUB_RUN_ATTEMPT      = $GITHUB_RUN_ATTEMPT"
+          echo "GITHUB_RETENTION_DAYS   = $GITHUB_RETENTION_DAYS"
+          echo ""
+          echo "─── Job & action ───────────────────────────────────"
+          echo "GITHUB_JOB        = $GITHUB_JOB"
+          echo "GITHUB_ACTION     = $GITHUB_ACTION"
+          echo "GITHUB_ACTION_PATH= $GITHUB_ACTION_PATH"
+          echo ""
+          echo "─── Evento ─────────────────────────────────────────"
+          echo "GITHUB_EVENT_NAME = $GITHUB_EVENT_NAME"
+          echo "GITHUB_EVENT_PATH = $GITHUB_EVENT_PATH"
+          echo ""
+          echo "─── Servidor & caminhos ────────────────────────────"
+          echo "GITHUB_SERVER_URL   = $GITHUB_SERVER_URL"
+          echo "GITHUB_API_URL      = $GITHUB_API_URL"
+          echo "GITHUB_GRAPHQL_URL  = $GITHUB_GRAPHQL_URL"
+          echo "GITHUB_WORKSPACE    = $GITHUB_WORKSPACE"
+          echo "RUNNER_WORKSPACE    = $RUNNER_WORKSPACE"
+          echo "GITHUB_PATH         = $GITHUB_PATH"
+
+      - name: "Payload completo do evento (arquivo)"
+        run: cat "$GITHUB_EVENT_PATH"
+
+  # ─────────────────────────────────────────────────────────────
+  # 5. INPUTS DO workflow_dispatch
+  # ─────────────────────────────────────────────────────────────
+  dump-inputs:
+    name: "🎛️ Inputs do workflow_dispatch"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: "Todos os inputs declarados"
+        run: |
+          echo "inputs.meu-texto    = ${{ inputs.meu-texto }}"
+          echo "inputs.meu-numero   = ${{ inputs.meu-numero }}"
+          echo "inputs.meu-bool     = ${{ inputs.meu-bool }}"
+          echo "inputs.meu-choice   = ${{ inputs.meu-choice }}"
+          echo "inputs.meu-ambiente = ${{ inputs.meu-ambiente }}"
+
+      - name: "toJSON dos inputs"
+        run: echo '${{ toJSON(inputs) }}'
+
+  # ─────────────────────────────────────────────────────────────
+  # 6. OUTPUTS ENTRE JOBS + job context pós-execução
+  # ─────────────────────────────────────────────────────────────
+  producer:
+    name: "📤 Producer (gera outputs)"
+    runs-on: ubuntu-latest
+    outputs:
+      ts:       ${{ steps.out.outputs.ts }}
+      rid:      ${{ steps.out.outputs.rid }}
+    steps:
+      - id: out
+        run: |
+          echo "ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "rid=$(echo $RANDOM$RANDOM | sha256sum | head -c 8)" >> $GITHUB_OUTPUT
+
+  consumer:
+    name: "📥 Consumer (lê outputs + needs context)"
+    runs-on: ubuntu-latest
+    needs: producer
+    steps:
+      - name: "needs context (toJSON)"
+        run: echo '${{ toJSON(needs) }}'
+
+      - name: "Outputs do job anterior"
+        run: |
+          echo "needs.producer.result  = ${{ needs.producer.result }}"
+          echo "needs.producer.outputs.ts  = ${{ needs.producer.outputs.ts }}"
+          echo "needs.producer.outputs.rid = ${{ needs.producer.outputs.rid }}"
+
+      - name: "steps context dentro do job"
+        id: meu-step
+        run: |
+          echo "chave=valor-qualquer" >> $GITHUB_OUTPUT
+
+      - name: "steps context (toJSON) — só steps já executados"
+        run: echo '${{ toJSON(steps) }}'
+
+  # ─────────────────────────────────────────────────────────────
+  # 7. MATRIX CONTEXT
+  # ─────────────────────────────────────────────────────────────
+  dump-matrix:
+    name: "🔢 Matrix (${{ matrix.os }}, Node ${{ matrix.node }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ["18", "20"]
+        exclude:
+          - os: windows-latest
+            node: "18"
+    steps:
+      - name: "matrix context (toJSON)"
+        run: echo '${{ toJSON(matrix) }}'
+
+      - name: "strategy context (toJSON)"
+        run: echo '${{ toJSON(strategy) }}'
+
+      - name: "Valores individuais"
+        run: |
+          echo "matrix.os          = ${{ matrix.os }}"
+          echo "matrix.node        = ${{ matrix.node }}"
+          echo "strategy.job-index = ${{ strategy.job-index }}"
+          echo "strategy.job-total = ${{ strategy.job-total }}"
+          echo "strategy.max-parallel = ${{ strategy.max-parallel }}"
+          echo "strategy.fail-fast    = ${{ strategy.fail-fast }}"
